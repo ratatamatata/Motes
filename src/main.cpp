@@ -8,7 +8,6 @@
 #include "main.h"
 
 using namespace std;
-using namespace boost::interprocess;
 
 int main(int argc, char *argv[])
 {
@@ -22,17 +21,17 @@ int main(int argc, char *argv[])
     clog << argv[1] << endl;
 
     CloudControl yandexDisk;
-    if(!yandexDisk.getFirstCopy())
-    {
-        yandexDisk.transerToken(argv[1]);
-        exit(EXIT_FAILURE);
-    }
-    auto response = yandexDisk.simpleRequest("upload?path=/Приложения/Todoom/test2&overwrite=true", GET);
+//    if(!yandexDisk.getFirstCopy())
+//    {
+//        yandexDisk.transerToken(argv[1]);
+//        exit(EXIT_FAILURE);
+//    }
+//    auto response = yandexDisk.simpleRequest("upload?path=/Приложения/Todoom/test2&overwrite=true", GET);
 //    cout << response["href"] << endl;
-    for(auto a : response)
-    {
-        cout << a << endl;
-    }
+//    for(auto a : response)
+//    {
+//        cout << a << endl;
+//    }
     string db_path;
     db_path = "1.db";
     auto db = make_shared<Database>(db_path);

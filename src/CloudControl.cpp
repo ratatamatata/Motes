@@ -1,94 +1,89 @@
 #include "CloudControl.h"
+#include <iostream>
+#include <string>
+
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPRequestHandler.h>
+#include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/HTTPServer.h>
+#include <Poco/Net/HTTPRequestHandlerFactory.h>
+#include <Poco/ScopedLock.h>
+#include <Poco/URI.h>
+#include <Poco/StringTokenizer.h>
+#include <Poco/Util/ServerApplication.h>
+#include <Poco/Net/HTTPSClientSession.h>
 
 using namespace std;
+using namespace Poco::Net;
+using namespace Poco;
+using namespace Poco::Util;
+
+bool codeReceived = false;
+string code;
+
+class CMyRequestHandler : public HTTPRequestHandler
+{
+public:
+    void handleRequest(HTTPServerRequest &req, HTTPServerResponse &resp)
+    {
+        resp.setStatus(HTTPResponse::HTTP_OK);
+        resp.setContentType("text/html");
+        ostream& out = resp.send();
+
+        URI uri(req.getURI());
+        StringTokenizer str(uri.getQuery(), "=");
+        if (str[0] == "code") //TODO проверку на наличие моего идентификатора
+        {
+            code = str[1];
+            codeReceived = true;
+            out << "OK\nCode is " << code;
+            out.flush();
+            return;
+        }
+
+        out << "error";
+        out.flush();
+    }
+};
+
+class MyRequestHandlerFactory : public HTTPRequestHandlerFactory
+{
+public:
+    virtual HTTPRequestHandler* createRequestHandler(const HTTPServerRequest &)
+    {
+        return new CMyRequestHandler;
+    }
+};
 
 CloudControl::CloudControl()
 {
-    //Open or create the shared memory object
-    struct SharedMemRemover
+    system("xdg-open \"https://oauth.yandex.ru/authorize?response_type=code&client_id=cb5b4cad0f46478c9dd05becdfd6ba6b\" &");
+    HTTPServer s(new MyRequestHandlerFactory, ServerSocket(8080), new HTTPServerParams);
+    s.start();
+    while(!codeReceived)
     {
-        SharedMemRemover(){shared_memory_object::remove("oauth_mem");}
-        ~SharedMemRemover(){shared_memory_object::remove("oauth_mem");}
-    } shrMemRemover;
-    struct MutexRemover
-    {
-//        MutexRemover(){named_mutex::remove("named1_mutex");}
-        ~MutexRemover(){named_mutex::remove("named1_mutex");}
-    } mutexRemover;
+    }
+    s.stop();
+    //test request
+    HTTPSClientSession session("oauth.yandex.ru");
+    session.setKeepAlive(true);
 
-    mutex = make_shared<named_mutex>(boost::interprocess::open_or_create, "named1_mutex");
+    Poco::Net::HTTPRequest req(Poco::Net::HTTPRequest::HTTP_POST, "/token", HTTPMessage::HTTP_1_1);
+    req.setContentType("application/x-www-form-urlencoded");
+    req.setKeepAlive(true); // notice setKeepAlive is also called on session (above)
 
-    try
-    {
-        oauth_mem = make_shared<shared_memory_object>(boost::interprocess::create_only
-                                                      ,"oauth_mem"
-                                                      ,boost::interprocess::read_write);
-        cout << "Shader memory created" << endl;
-        firstCopy = true;
-        system("chromium \"https://oauth.yandex.ru/authorize?response_type=token&client_id=cb5b4cad0f46478c9dd05becdfd6ba6b\" &");
-        try
-        {
-            // wait until second process gives token
-            offset_t mem_size;
-            do
-            {
-            oauth_mem->get_size(mem_size);
-            }
-            while(mem_size == 0);
-            cout << mem_size << endl;
-            // read token from shared memory
-            scoped_lock<named_mutex> lock(*mutex);
-            cout << "Mutex locked" << endl;
-            mapped_region region(*oauth_mem, boost::interprocess::read_only);
-            char *mem = static_cast<char*>(region.get_address());
-            string shared_mem_data(mem, region.get_size());
-            cout << shared_mem_data << endl;
-            std::size_t begin_of_token = shared_mem_data.find("access_token=") + 13; //TODO избавиться от магических значений, после того, как узнаю API гуглдиска
-            std::size_t end_of_token = shared_mem_data.find("&token_type=");
-            cout << begin_of_token << " " << end_of_token << endl;
-            token = shared_mem_data.substr(begin_of_token, end_of_token - begin_of_token);
-            cout << token << endl;
-        } catch (interprocess_exception &ex)
-        {
-            std::cout << ex.what() << std::endl;
-        }
-    }
-    // if shared memory exists, run second programm's algorithms
-    catch(interprocess_exception &ex)
-    {
-        std::cout << ex.what() << std::endl;
-        firstCopy = false;
-        try
-        {
-            oauth_mem = make_shared<shared_memory_object>(boost::interprocess::open_only
-                                           ,"oauth_mem"
-                                           ,boost::interprocess::read_write);
-            cout << "Shared memory opened" << endl;
-        }
-        catch(interprocess_exception &ex)
-        {
-            std::cout << ex.what() << std::endl;
-            cout << "Can't create or open shared memory" << endl;
-        }
-    }
-}
+    std::string reqBody("grant_type=authorization_code&code=");
+    reqBody += code + "&client_id=cb5b4cad0f46478c9dd05becdfd6ba6b&client_secret=68ce6e11b7ba4083895a9ba369732f54";
+    req.setContentLength( reqBody.length() );
 
-void CloudControl::transerToken(char* tok)
-{
-    //Open or create the named mutex
-    try
-    {
-        scoped_lock<named_mutex> lock(*mutex);
-        cout << "Mutex locked" << endl;
-        oauth_mem->truncate(strlen(tok));
-        mapped_region region(*oauth_mem, boost::interprocess::read_write);
-        cout <<  region.get_size() << endl;
-        memcpy(region.get_address(),tok,strlen(tok));
-    }
-    catch(interprocess_exception &ex)
-    {
-        std::cout << ex.what() << std::endl;
-    }
+    std::ostream& myOStream = session.sendRequest(req); // sends request, returns open stream
+    myOStream << reqBody;  // sends the body
+
+    req.write(std::cout);
+
+    Poco::Net::HTTPResponse res;
+    std::istream& iStr = session.receiveResponse(res);  // get the response from server
+    std::cerr << iStr.rdbuf();  // dump server response so you can view it
 }
 
 static size_t write_data(char *ptr, size_t size, size_t nmemb, string* data)
@@ -99,62 +94,6 @@ static size_t write_data(char *ptr, size_t size, size_t nmemb, string* data)
      return size*nmemb;
    }
   else return 0;  // будет ошибка
-}
-
-json CloudControl::simpleRequest(string endOfURL, HTTP_Method method)
-{
-    struct curl_slist *header = NULL;
-    string content;
-    string url = "https://cloud-api.yandex.net:443/v1/disk/resources/" + endOfURL;
-    CURL*  curl_handle = curl_easy_init();
-    if(curl_handle)
-    {
-        // задаем  url адрес
-        string oauth_header = "Authorization: OAuth " + token;
-        header = curl_slist_append(header, oauth_header.c_str());
-        switch(method)
-        {
-            case GET:
-            {
-            curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "GET");
-            break;
-            }
-            case POST:
-            {
-            curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "POST");
-            break;
-            }
-            case PUT:
-            {
-            curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "PUT");
-            break;
-            }
-            case DELETE:
-            {
-            curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "DELETE");
-            break;
-            }
-        }
-        curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, header);
-        curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_data);
-        curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, &content);
-        // send the request
-        CURLcode res = curl_easy_perform(curl_handle);
-        // print a response
-        json response_json;
-        if (!res)
-        {
-            response_json = nlohmann::json::parse(content);
-        }
-        else
-        {
-            cerr << curl_easy_strerror(res) << endl;
-        }
-        // закрываем дескриптор curl
-        curl_easy_cleanup(curl_handle);
-        return response_json;
-    }
 }
 
 bool CloudControl::getFirstCopy() const
