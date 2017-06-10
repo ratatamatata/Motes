@@ -20,18 +20,15 @@ int main(int argc, char *argv[])
     if(argc > 1) clog << strlen(argv[1]) << endl;
     clog << argv[1] << endl;
 
-    CloudControl yandexDisk;
-//    if(!yandexDisk.getFirstCopy())
+    CloudControl yandexDisk(YANDEX);
+    yandexDisk.getToken();
+    yandexDisk.downloadFile("test_file.txt", "");
+//    auto j = yandexDisk.listDirictory("")["_embedded"]["items"];
+//    for(auto& a : j)
 //    {
-//        yandexDisk.transerToken(argv[1]);
-//        exit(EXIT_FAILURE);
+//        std::cout << a["name"] << '\n';
 //    }
-//    auto response = yandexDisk.simpleRequest("upload?path=/Приложения/Todoom/test2&overwrite=true", GET);
-//    cout << response["href"] << endl;
-//    for(auto a : response)
-//    {
-//        cout << a << endl;
-//    }
+//    yandexDisk.uploadFile("Makefile", "test_file.txt");
     string db_path;
     db_path = "1.db";
     auto db = make_shared<Database>(db_path);

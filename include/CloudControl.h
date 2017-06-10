@@ -2,24 +2,26 @@
 #define CLOUDCONTROL_H
 
 #include <iostream>
-#include "json.hpp"
+#include "HttpUtils.h"
 
 using namespace std;
-using json = nlohmann::json;
 
-typedef enum{GET, POST, PUT, DELETE} HTTP_Method;
+typedef enum{GOOGLE, YANDEX} CloudType;
 
 class CloudControl
 {
 public:
-    CloudControl();
-    void transerToken(char *tok);
-    json simpleRequest(string endOfURL, HTTP_Method method);
-    bool getFirstCopy() const;
+    CloudControl(CloudType cloud);
+    void uploadFile(const string &file_path, const string &file_url);
+    void downloadFile(const string& file_url, const string& file_path);
+    json listDirictory(const string& uri_path);
+    void getToken();
 
 private:
-    bool firstCopy;
     string token;
+    CloudType cloud;
+    HttpUtils Http;
+    const string REST_YANDEX_URI = "https://cloud-api.yandex.net:443/v1/disk/resources";
 };
 
 #endif // CLOUDCONTROL_H

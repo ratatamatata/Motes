@@ -1,103 +1,96 @@
 #include "CloudControl.h"
 #include <iostream>
 #include <string>
-
-#include <Poco/Net/HTTPServerRequest.h>
-#include <Poco/Net/HTTPRequestHandler.h>
-#include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Net/HTTPServer.h>
-#include <Poco/Net/HTTPRequestHandlerFactory.h>
-#include <Poco/ScopedLock.h>
-#include <Poco/URI.h>
-#include <Poco/StringTokenizer.h>
-#include <Poco/Util/ServerApplication.h>
-#include <Poco/Net/HTTPSClientSession.h>
+#include <fstream>
 
 using namespace std;
-using namespace Poco::Net;
-using namespace Poco;
-using namespace Poco::Util;
 
-bool codeReceived = false;
-string code;
+string code, upload_data;
+size_t read_callback(char *buffer, size_t size, size_t nitems, string* data);
 
-class CMyRequestHandler : public HTTPRequestHandler
+CloudControl::CloudControl(CloudType cloud_type) : cloud(cloud_type) {}
+
+json CloudControl::listDirictory(const string& uri_path)
 {
-public:
-    void handleRequest(HTTPServerRequest &req, HTTPServerResponse &resp)
+    if(cloud == YANDEX)
     {
-        resp.setStatus(HTTPResponse::HTTP_OK);
-        resp.setContentType("text/html");
-        ostream& out = resp.send();
-
-        URI uri(req.getURI());
-        StringTokenizer str(uri.getQuery(), "=");
-        if (str[0] == "code") //TODO проверку на наличие моего идентификатора
-        {
-            code = str[1];
-            codeReceived = true;
-            out << "OK\nCode is " << code;
-            out.flush();
-            return;
-        }
-
-        out << "error";
-        out.flush();
+        string url = REST_YANDEX_URI + "?path=/Приложения/Todoom/" + uri_path;
+        auto responce = Http.sendRequest(url, GET, true);
+        return responce;
     }
-};
+}
 
-class MyRequestHandlerFactory : public HTTPRequestHandlerFactory
+void CloudControl::uploadFile(const string& file_path, const string& file_url)
 {
-public:
-    virtual HTTPRequestHandler* createRequestHandler(const HTTPServerRequest &)
+    if(cloud == YANDEX)
     {
-        return new CMyRequestHandler;
+        string url = REST_YANDEX_URI + "/upload?path=/Приложения/Todoom/" + file_url + "&overwrite=true";
+        auto responce = Http.sendRequest(url, GET, true);
+        string href = responce["href"];
+        Http.uploadFile(file_path, href);
     }
-};
+    else if(cloud == GOOGLE)
+    {
+        string url = "https://www.googleapis.com/upload/drive/v2?uploadType=media";
+        fstream file(file_path, std::fstream::in);
+        string body((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        Http.setBody(body);
+        auto responce = Http.sendRequest(url, POST, true);
+        cout << responce << endl;
+    }
+}
 
-CloudControl::CloudControl()
+void CloudControl::downloadFile(const string& file_url, const string& file_path)
 {
-    system("xdg-open \"https://oauth.yandex.ru/authorize?response_type=code&client_id=cb5b4cad0f46478c9dd05becdfd6ba6b\" &");
-    HTTPServer s(new MyRequestHandlerFactory, ServerSocket(8080), new HTTPServerParams);
-    s.start();
-    while(!codeReceived)
+    if(cloud == YANDEX)
     {
+        string url = REST_YANDEX_URI + "/download?path=/Приложения/Todoom/" + file_url;
+        auto responce = Http.sendRequest(url, GET, true);
+        string href = responce["href"];
+        cout << href << endl;
+        Http.downloadFile("/home/sabbat/test1.txt", href);
     }
-    s.stop();
+}
+
+void CloudControl::getToken()
+{
+    if(cloud == YANDEX)
+    {
+        system("xdg-open \"https://oauth.yandex.ru/authorize?response_type=code&client_id=cb5b4cad0f46478c9dd05becdfd6ba6b\" &");
+    }
+    else if(cloud == GOOGLE)
+    {
+        system("xdg-open \"https://accounts.google.com/o/oauth2/v2/auth?&"
+               "scope=https://www.googleapis.com/auth/drive.appfolder&"
+               "redirect_uri=http://localhost:8080/todoom_test/&"
+               "access_type=offline&response_type=code&"
+               "client_id=667025493984-td9odtft7j4srplq2q421q39c7ojg4uo.apps.googleusercontent.com\" &");
+    }
+    code = Http.waitCode();
     //test request
-    HTTPSClientSession session("oauth.yandex.ru");
-    session.setKeepAlive(true);
+    string session_url;
+    std::string reqBody;
+    if(cloud == YANDEX)
+    {
+        session_url = "https://oauth.yandex.ru/token";
+        reqBody = "grant_type=authorization_code&code=";
+        reqBody += code + "&client_id=cb5b4cad0f46478c9dd05becdfd6ba6b&"
+                          "client_secret=68ce6e11b7ba4083895a9ba369732f54";
+    }
+    else if(cloud == GOOGLE)
+    {
+        session_url = "https://www.googleapis.com/oauth2/v4/token";
+        reqBody = "code=";
+        reqBody += code + "&redirect_uri=http://localhost:8080/todoom_test/&"
+                          "client_id=667025493984-td9odtft7j4srplq2q421q39c7ojg4uo.apps.googleusercontent.com&"
+                          "client_secret=kVuD5R0hloUSDDc4kdzbx96n&scope=&"
+                          "grant_type=authorization_code";
 
-    Poco::Net::HTTPRequest req(Poco::Net::HTTPRequest::HTTP_POST, "/token", HTTPMessage::HTTP_1_1);
-    req.setContentType("application/x-www-form-urlencoded");
-    req.setKeepAlive(true); // notice setKeepAlive is also called on session (above)
-
-    std::string reqBody("grant_type=authorization_code&code=");
-    reqBody += code + "&client_id=cb5b4cad0f46478c9dd05becdfd6ba6b&client_secret=68ce6e11b7ba4083895a9ba369732f54";
-    req.setContentLength( reqBody.length() );
-
-    std::ostream& myOStream = session.sendRequest(req); // sends request, returns open stream
-    myOStream << reqBody;  // sends the body
-
-    req.write(std::cout);
-
-    Poco::Net::HTTPResponse res;
-    std::istream& iStr = session.receiveResponse(res);  // get the response from server
-    std::cerr << iStr.rdbuf();  // dump server response so you can view it
+    }
+    Http.setBody(reqBody);
+    auto response_json = Http.sendRequest(session_url, POST, false);
+//    cout << response_json << endl;
+    token = response_json["access_token"];
+//    cout << token << endl;
+    Http.setToken(token);
 }
-
-static size_t write_data(char *ptr, size_t size, size_t nmemb, string* data)
-{
-  if (data)
-   {
-     data->append(ptr, size*nmemb);
-     return size*nmemb;
-   }
-  else return 0;  // будет ошибка
-}
-
-bool CloudControl::getFirstCopy() const
-{
-    return firstCopy;
-}
-
