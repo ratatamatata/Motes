@@ -4,6 +4,8 @@ project(todoom)
 
 find_library(SQLITE_LIBRARY sqlite3)
 find_library(LIBEVENT_LIBRARY event)
+find_library(BOOST_LIBRARY boost_system)
+find_library(BOOST_FILESYSTEM boost_filesystem)
 file(GLOB_RECURSE SOURCES "src/*")
 file(GLOB_RECURSE HEADERS "include/*")
 
@@ -15,4 +17,4 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -lcurl")
 
 add_executable(todoom ${SOURCES} ${HEADERS})
 
-target_link_libraries(${PROJECT_NAME} ${SQLITE_LIBRARY} ${LIBEVENT_LIBRARY})
+target_link_libraries(${PROJECT_NAME} ${BOOST_FILESYSTEM} ${BOOST_LIBRARY} ${SQLITE_LIBRARY} ${LIBEVENT_LIBRARY})

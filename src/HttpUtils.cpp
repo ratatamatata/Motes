@@ -1,4 +1,5 @@
 #include "HttpUtils.h"
+#include <fstream>
 
 HttpUtils::HttpUtils()
 {
@@ -161,15 +162,24 @@ void HttpUtils::uploadFile(const string &path_to_file, const string &url)
 
 void HttpUtils::downloadFile(const string& path_to_file, const string& url)
 {
-    FILE *fp;
+    fstream file(path_to_file, fstream::out);
+    string file_str;
     if (curl_handle) {
-        fp = fopen(path_to_file.c_str(), "wb");
         curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_data);
-        curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, fp);
-        curl_easy_perform(curl_handle);
+        curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, &file_str);
+        CURLcode res = curl_easy_perform(curl_handle);
+        if (!res)
+        {
+            file << file_str;
+            file.close();
+        }
+        else
+        {
+            cerr << curl_easy_strerror(res) << endl;
+        }
         /* always cleanup */
-        curl_easy_cleanup(curl_handle);
-        fclose(fp);
+        curl_easy_reset(curl_handle);
     }
 }
