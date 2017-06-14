@@ -67,12 +67,59 @@ void CloudControl::downloadFile(const string &file_path)
 {
     if(cloud == YANDEX)
     {
-        string url = REST_YANDEX_URI + "/download?path=/Приложения/Todoom/" + file_path;
+        string url;
+        if(file_path[0] == '/')
+        {
+            url = REST_YANDEX_URI + "/download?path=/Приложения/Todoom/" + file_path.substr(1, file_path.size() - 1);
+        }
+        else
+        {
+            url = REST_YANDEX_URI + "/download?path=/Приложения/Todoom/" + file_path;
+        }
         auto responce = Http.sendRequest(url, GET, true);
         string href = responce["href"];
         if(href.find("downloader.disk.yandex.ru/zip/") != string::npos)
         {
-            cout << "Zip found!" << endl;
+            // check existing of folder and correct path to folder
+            boost::filesystem::path path;
+            if((file_path.size() != 0) & (file_path[file_path.size() - 1] != '/'))
+            {
+                path = HOME_FOLDER + file_path + '/';
+            }
+            else
+            {
+                path = HOME_FOLDER + file_path;
+            }
+            if (!boost::filesystem::exists(path)) { boost::filesystem::create_directory(path); };
+            string zip_path = path.string() + "folder.zip";
+            Http.downloadFile(zip_path, href);
+            // open archive
+            int* err;
+            auto* zip_handler = zip_open(zip_path.c_str(), ZIP_RDONLY, err);
+            auto num_entries = zip_get_num_entries(zip_handler, 0);
+            struct zip_stat* file_stat;
+            auto root_folder = path.parent_path().parent_path();
+            for (int i = 0; i < num_entries; ++i)
+            {
+                zip_stat_index(zip_handler, i, 0, file_stat);
+                string name = root_folder.string() + "/" + file_stat->name;
+                fstream unzip_f(name, fstream::out);
+                char readed_file[100];
+                string file_str = "";
+                int len = 0, size = 0;
+                auto file_inzip = zip_fopen_index(zip_handler, i, 0);
+                while(size != file_stat->size)
+                {
+                    len = zip_fread(file_inzip, readed_file, 100);
+                    size += len;
+                    string tmp = readed_file;
+                    file_str += tmp.substr(0, len);
+                }
+                unzip_f << file_str;
+                unzip_f.close();
+            }
+            cout << path.string() + "folder.zip" << endl;
+            boost::filesystem::remove(path.string() + "folder.zip");
         }
         else
         {

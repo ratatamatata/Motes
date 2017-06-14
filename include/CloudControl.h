@@ -11,7 +11,7 @@ typedef enum{GOOGLE, YANDEX} CloudType;
 class CloudControl
 {
 public:
-    CloudControl(CloudType cloud, const string& HOME_FOLDER = "~/.local/share/todoom/");
+    CloudControl(CloudType cloud, const string& HOME_FOLDER = "~/.local/share/Todoom/");
     void uploadFile(const string &file_path);
     void downloadFile(const string &file_path);
     json listDirectory(const string& uri_path);
