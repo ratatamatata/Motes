@@ -1,8 +1,10 @@
 #include "HttpUtils.h"
 #include <fstream>
+#include <sys/stat.h>
 
 HttpUtils::HttpUtils()
 {
+    curl_global_init(CURL_GLOBAL_ALL);
     curl_handle = curl_easy_init();
 }
 
@@ -10,6 +12,7 @@ HttpUtils::~HttpUtils()
 {
     // закрываем дескриптор curl
     curl_easy_cleanup(curl_handle);
+    curl_global_cleanup();
 }
 
 string HttpUtils::waitCode()
@@ -39,7 +42,7 @@ string HttpUtils::waitCode()
             evhttp_send_reply(request, HTTP_OK, "OK", buffer);
             // Free up stuff
             evbuffer_free (buffer);
-            event_base_loopbreak(ebase);  //TODO must to call it later?
+            event_base_loopbreak(ebase);  //TODO must call it later?
         }
     };
     auto thunk=[](evhttp_request *request, void *privParams){ // note thunk is captureless
@@ -65,12 +68,6 @@ void HttpUtils::setToken(const string &value)
     token = value;
 }
 
-
-void HttpUtils::setBody(const string &value)
-{
-    curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, value.c_str());
-}
-
 static size_t write_data(char *ptr, size_t size, size_t nmemb, string* data)
 {
     if (data)
@@ -81,16 +78,17 @@ static size_t write_data(char *ptr, size_t size, size_t nmemb, string* data)
     else return 0;  // будет ошибка
 }
 
-json HttpUtils::sendRequest(string& url, HTTP_Method method, bool OAuth)
+json HttpUtils::sendRequest(string& url, HTTP_Method method, bool OAuth, const string &body_value)
 {
+    CURL*  curl_handle = curl_easy_init();
     struct curl_slist *header = NULL;
-    string content;
+    string content, oauth_header;
     if(curl_handle)
     {
         // задаем  url адрес
         if(OAuth)
         {
-            string oauth_header = "Authorization: OAuth " + token;
+            oauth_header = "Authorization: OAuth " + token;
             header = curl_slist_append(header, oauth_header.c_str());
         }
         switch(method)
@@ -116,6 +114,7 @@ json HttpUtils::sendRequest(string& url, HTTP_Method method, bool OAuth)
             break;
             }
         }
+        if(body_value.size() > 0) curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, body_value.c_str());
         curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, header);
         curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_data);
@@ -132,7 +131,7 @@ json HttpUtils::sendRequest(string& url, HTTP_Method method, bool OAuth)
         {
             cerr << curl_easy_strerror(res) << endl;
         }
-        curl_easy_reset(curl_handle);
+        curl_easy_cleanup(curl_handle);
         return  response_json;
     } // TODO exeption from here
 }
@@ -140,6 +139,9 @@ json HttpUtils::sendRequest(string& url, HTTP_Method method, bool OAuth)
 void HttpUtils::uploadFile(const string &path_to_file, const string &url)
 {
     FILE* upload_file = fopen(path_to_file.c_str() , "r");
+    struct stat file_info;
+    if(fstat(fileno(upload_file), &file_info) != 0)
+        cerr << "fstat error" << endl;
     if(curl_handle)
     {
         /* we want to use our own read function */
@@ -154,14 +156,20 @@ void HttpUtils::uploadFile(const string &path_to_file, const string &url)
            option you MUST make sure that the type of the passed-in argument is a
            curl_off_t. If you use CURLOPT_INFILESIZE (without _LARGE) you must
            make sure that to pass in a type 'long' argument. */
-        curl_easy_setopt(curl_handle, CURLOPT_INFILESIZE, sizeof(upload_file));
-        curl_easy_perform(curl_handle); //todo Check return
+        curl_easy_setopt(curl_handle, CURLOPT_INFILESIZE_LARGE,
+                         (curl_off_t)file_info.st_size);
+        CURLcode res = curl_easy_perform(curl_handle); //todo Check return
+        if (res)
+        {
+            cerr << curl_easy_strerror(res) << endl;
+        }
         curl_easy_reset(curl_handle);
     }
 }
 
 void HttpUtils::downloadFile(const string& path_to_file, const string& url)
 {
+    CURL*  curl_handle = curl_easy_init();
     fstream file(path_to_file, fstream::out);
     string file_str;
     if (curl_handle) {
@@ -169,6 +177,8 @@ void HttpUtils::downloadFile(const string& path_to_file, const string& url)
         curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_data);
         curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, &file_str);
+//        /* Switch on full protocol/debug output while testing */
+//        curl_easy_setopt(curl_handle, CURLOPT_VERBOSE, 1L);
         CURLcode res = curl_easy_perform(curl_handle);
         if (!res)
         {
@@ -180,6 +190,6 @@ void HttpUtils::downloadFile(const string& path_to_file, const string& url)
             cerr << curl_easy_strerror(res) << endl;
         }
         /* always cleanup */
-        curl_easy_reset(curl_handle);
+        curl_easy_cleanup(curl_handle);
     }
 }

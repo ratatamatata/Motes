@@ -4,11 +4,9 @@
 #include <fstream>
 #include <boost/filesystem.hpp>
 #include <zip.h>
+#include <sys/inotify.h>
 
 using namespace std;
-
-string code, upload_data;
-size_t read_callback(char *buffer, size_t size, size_t nitems, string* data);
 
 CloudControl::CloudControl(CloudType cloud_type, const string& HOME_FOLDER) : cloud(cloud_type)
 {
@@ -26,6 +24,14 @@ CloudControl::CloudControl(CloudType cloud_type, const string& HOME_FOLDER) : cl
     }
     boost::filesystem::path p(this->HOME_FOLDER);
     if (!boost::filesystem::exists(p)) { boost::filesystem::create_directory(p); };
+}
+
+CloudControl::~CloudControl()
+{
+    for(auto i = watch_thread_vec.begin(); i < watch_thread_vec.end(); i++)
+    {
+        i->join();
+    }
 }
 
 json CloudControl::listDirectory(const string &uri_path)
@@ -58,8 +64,7 @@ void CloudControl::uploadFile(const string &file_path)
         string url = "https://www.googleapis.com/upload/drive/v2/file&&uploadType=media"; //REST_GOOGLE_URI + file_url;
         fstream file(HOME_FOLDER + file_path, std::fstream::in);
         string body((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        Http.setBody(body);
-        auto responce = Http.sendRequest(url, POST, true);
+        auto responce = Http.sendRequest(url, POST, true, body);
     }
 }
 
@@ -94,10 +99,10 @@ void CloudControl::downloadFile(const string &file_path)
             string zip_path = path.string() + "folder.zip";
             Http.downloadFile(zip_path, href);
             // open archive
-            int* err;
+            int* err = nullptr;
             auto* zip_handler = zip_open(zip_path.c_str(), ZIP_RDONLY, err);
             auto num_entries = zip_get_num_entries(zip_handler, 0);
-            struct zip_stat* file_stat;
+            struct zip_stat* file_stat = nullptr;
             auto root_folder = path.parent_path().parent_path();
             for (int i = 0; i < num_entries; ++i)
             {
@@ -123,6 +128,14 @@ void CloudControl::downloadFile(const string &file_path)
         }
         else
         {
+            auto path_end = file_path.find_last_of("/");
+            if(path_end !=  string::npos)
+            {
+                string path_str = file_path.substr(0, path_end);
+                cout << path_str << endl;
+                boost::filesystem::path path(HOME_FOLDER + path_str);
+                if (!boost::filesystem::exists(path)) { boost::filesystem::create_directory(path); };
+            }
             Http.downloadFile(HOME_FOLDER + file_path, href);
         }
     }
@@ -162,8 +175,65 @@ void CloudControl::getToken()
                           "grant_type=authorization_code";
 
     }
-    Http.setBody(reqBody);
-    auto response_json = Http.sendRequest(session_url, POST, false);
+    auto response_json = Http.sendRequest(session_url, POST, false, reqBody);
     token = response_json["access_token"];
     Http.setToken(token);
+}
+
+void CloudControl::watchFolder(const string& folder)
+{
+    auto func = [this](const string& folder){
+        auto inotify_fd = inotify_init();
+        auto wd = inotify_add_watch(inotify_fd, folder.c_str(), IN_MODIFY);
+        char readed_file[4096]
+                __attribute__ ((aligned(__alignof__(struct inotify_event))));
+        const struct inotify_event *event;
+        while(true)
+        {
+            auto len = read(inotify_fd, &readed_file, sizeof(readed_file));
+            if (len <= 0) break;
+            for (char *ptr = readed_file; ptr < readed_file + len;
+                 ptr += sizeof(struct inotify_event) + event->len)
+            {
+                event = (const struct inotify_event *) ptr;
+                string changed_file = (folder.size() == HOME_FOLDER.size()) ? static_cast<string>(event->name) :
+                                      folder.substr(HOME_FOLDER.size(), folder.size()-HOME_FOLDER.size())
+                                      + "/" + static_cast<string>(event->name);
+                this->uploadFile(changed_file);
+            }
+        }
+        inotify_rm_watch( inotify_fd, wd );
+        close(inotify_fd);
+    };
+    watch_thread_vec.push_back(thread(func, folder));
+    for(auto& p: boost::filesystem::recursive_directory_iterator(folder))
+    {
+        if(boost::filesystem::is_directory(p)) watch_thread_vec.push_back(thread(func, p.path().string()));
+    }
+}
+
+void CloudControl::syncWithCloud(const string &uri_path)
+{
+    auto list = this->listDirectory(uri_path)["_embedded"]["items"];
+    for(auto& elem : list)
+    {
+        string elem_path;
+        if(elem["type"] == "dir")
+        {
+            if(uri_path.size() != 0) elem_path = uri_path + "/" +  elem["name"].get<string>();
+            else elem_path = uri_path +  elem["name"].get<string>();
+            cout << elem_path << endl;
+            this->syncWithCloud(elem_path);
+            boost::filesystem::path path(this->HOME_FOLDER +  elem_path);
+            if(!is_directory(path)) boost::filesystem::create_directory(path);
+        }
+        else if(elem["type"] == "file")
+        {
+            cout << "Name: " + elem["name"].get<string>() << endl;
+            if(uri_path.size() != 0) elem_path = uri_path + "/" +  elem["name"].get<string>();
+            else elem_path = uri_path +  elem["name"].get<string>();
+            cout << elem_path << endl;
+            this->downloadFile(elem_path);
+        }
+    }
 }
