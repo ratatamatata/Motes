@@ -81,7 +81,7 @@ static size_t write_data(char *ptr, size_t size, size_t nmemb, string* data)
 json HttpUtils::sendRequest(string& url, HTTP_Method method, bool OAuth, const string &body_value)
 {
     CURL*  curl_handle = curl_easy_init();
-    struct curl_slist *header = NULL;
+    struct curl_slist *header = nullptr;
     string content, oauth_header;
     if(curl_handle)
     {
@@ -114,7 +114,7 @@ json HttpUtils::sendRequest(string& url, HTTP_Method method, bool OAuth, const s
             break;
             }
         }
-        if(body_value.size() > 0) curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, body_value.c_str());
+        if(!body_value.empty()) curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, body_value.c_str());
         curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, header);
         curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_data);
@@ -158,7 +158,7 @@ void HttpUtils::uploadFile(const string &path_to_file, const string &url)
            make sure that to pass in a type 'long' argument. */
         curl_easy_setopt(curl_handle, CURLOPT_INFILESIZE_LARGE,
                          (curl_off_t)file_info.st_size);
-        CURLcode res = curl_easy_perform(curl_handle); //todo Check return
+        CURLcode res = curl_easy_perform(curl_handle);
         if (res)
         {
             cerr << curl_easy_strerror(res) << endl;

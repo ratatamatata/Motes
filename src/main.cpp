@@ -6,7 +6,6 @@
  */
 
 #include "main.h"
-#include <boost/filesystem.hpp>
 
 using namespace std;
 
@@ -18,10 +17,10 @@ int main(int argc, char *argv[])
     clog.rdbuf(ofs.rdbuf());
 #endif
     // если передан аргумент, то вывести его длину и значение
-    if(argc > 1) clog << strlen(argv[1]) << endl;
-    clog << argv[1] << endl;
+//    if(argc > 1) clog << strlen(argv[1]) << endl;
+//    clog << argv[1] << endl;
 
-    CloudControl yandexDisk(YANDEX);
+    YandexCloudControl yandexDisk;
     yandexDisk.getToken();
 
     string app_dir = "/home/sabbat/.local/share/Todoom/";

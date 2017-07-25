@@ -1,14 +1,15 @@
 #include "CloudControl.h"
-#include <iostream>
-#include <string>
 #include <fstream>
-#include <boost/filesystem.hpp>
+#include <experimental/filesystem>
 #include <zip.h>
 #include <sys/inotify.h>
+#include <unistd.h>
+#include "picosha2.h"
 
 using namespace std;
+using namespace experimental;
 
-CloudControl::CloudControl(CloudType cloud_type, const string& HOME_FOLDER) : cloud(cloud_type)
+YandexCloudControl::YandexCloudControl(const string& HOME_FOLDER)
 {
     if (not HOME_FOLDER.empty() and HOME_FOLDER[0] == '~') {
         assert(HOME_FOLDER.size() == 1 or HOME_FOLDER[1] == '/');
@@ -22,11 +23,11 @@ CloudControl::CloudControl(CloudType cloud_type, const string& HOME_FOLDER) : cl
     {
         this->HOME_FOLDER = HOME_FOLDER;
     }
-    boost::filesystem::path p(this->HOME_FOLDER);
-    if (!boost::filesystem::exists(p)) { boost::filesystem::create_directory(p); };
+    filesystem::path p(this->HOME_FOLDER);
+    if (!filesystem::exists(p)) { filesystem::create_directory(p); };
 }
 
-CloudControl::~CloudControl()
+YandexCloudControl::~YandexCloudControl()
 {
     for(auto i = watch_thread_vec.begin(); i < watch_thread_vec.end(); i++)
     {
@@ -34,44 +35,23 @@ CloudControl::~CloudControl()
     }
 }
 
-json CloudControl::listDirectory(const string &uri_path)
+json YandexCloudControl::listDirectory(const string &uri_path)
 {
-    if(cloud == YANDEX)
-    {
-        string url = REST_YANDEX_URI + "?path=/Приложения/Todoom/" + uri_path;
-        auto responce = Http.sendRequest(url, GET, true);
-        return responce;
-    }
-    else if(cloud == GOOGLE)
-    {
-        string url = REST_GOOGLE_URI + uri_path;
-        auto responce = Http.sendRequest(url, GET, true);
-        cout << responce << endl;
-    }
+    string url = REST_YANDEX_URI + "?path=/Приложения/Todoom/" + uri_path;
+    auto responce = Http.sendRequest(url, GET, true);
+    return responce;
 }
 
-void CloudControl::uploadFile(const string &file_path)
+void YandexCloudControl::uploadFile(const string &file_path)
 {
-    if(cloud == YANDEX)
-    {
-        string url = REST_YANDEX_URI + "/upload?path=/Приложения/Todoom/" + file_path + "&overwrite=true";
-        auto responce = Http.sendRequest(url, GET, true);
-        string href = responce["href"];
-        Http.uploadFile(HOME_FOLDER + file_path, href);
-    }
-    else if(cloud == GOOGLE)
-    {
-        string url = "https://www.googleapis.com/upload/drive/v2/file&&uploadType=media"; //REST_GOOGLE_URI + file_url;
-        fstream file(HOME_FOLDER + file_path, std::fstream::in);
-        string body((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        auto responce = Http.sendRequest(url, POST, true, body);
-    }
+    string url = REST_YANDEX_URI + "/upload?path=/Приложения/Todoom/" + file_path + "&overwrite=true";
+    auto responce = Http.sendRequest(url, GET, true);
+    string href = responce["href"];
+    Http.uploadFile(HOME_FOLDER + file_path, href);
 }
 
-void CloudControl::downloadFile(const string &file_path)
+void YandexCloudControl::downloadFile(const string &file_path)
 {
-    if(cloud == YANDEX)
-    {
         string url;
         if(file_path[0] == '/')
         {
@@ -86,8 +66,8 @@ void CloudControl::downloadFile(const string &file_path)
         if(href.find("downloader.disk.yandex.ru/zip/") != string::npos)
         {
             // check existing of folder and correct path to folder
-            boost::filesystem::path path;
-            if((file_path.size() != 0) & (file_path[file_path.size() - 1] != '/'))
+            filesystem::path path;
+            if( !file_path.empty() && (file_path[file_path.size() - 1] != '/'))
             {
                 path = HOME_FOLDER + file_path + '/';
             }
@@ -95,7 +75,7 @@ void CloudControl::downloadFile(const string &file_path)
             {
                 path = HOME_FOLDER + file_path;
             }
-            if (!boost::filesystem::exists(path)) { boost::filesystem::create_directory(path); };
+            if (!filesystem::exists(path)) { filesystem::create_directory(path); };
             string zip_path = path.string() + "folder.zip";
             Http.downloadFile(zip_path, href);
             // open archive
@@ -124,7 +104,7 @@ void CloudControl::downloadFile(const string &file_path)
                 unzip_f.close();
             }
             cout << path.string() + "folder.zip" << endl;
-            boost::filesystem::remove(path.string() + "folder.zip");
+            filesystem::remove(path.string() + "folder.zip");
         }
         else
         {
@@ -133,58 +113,51 @@ void CloudControl::downloadFile(const string &file_path)
             {
                 string path_str = file_path.substr(0, path_end);
                 cout << path_str << endl;
-                boost::filesystem::path path(HOME_FOLDER + path_str);
-                if (!boost::filesystem::exists(path)) { boost::filesystem::create_directory(path); };
+                filesystem::path path(HOME_FOLDER + path_str);
+                if (!filesystem::exists(path)) { filesystem::create_directory(path); };
             }
             Http.downloadFile(HOME_FOLDER + file_path, href);
         }
-    }
 }
 
-void CloudControl::getToken()
+
+void YandexCloudControl::deleteFile(const string &file_path)
 {
-    if(cloud == YANDEX)
-    {
-        system("xdg-open \"https://oauth.yandex.ru/authorize?response_type=code&client_id=cb5b4cad0f46478c9dd05becdfd6ba6b\" &");
-    }
-    else if(cloud == GOOGLE)
-    {
-        system("xdg-open \"https://accounts.google.com/o/oauth2/v2/auth?&"
-               "scope=https://www.googleapis.com/auth/drive.appfolder&"
-               "redirect_uri=http://localhost:8080/todoom_test/&"
-               "access_type=offline&response_type=code&"
-               "client_id=667025493984-td9odtft7j4srplq2q421q39c7ojg4uo.apps.googleusercontent.com\" &");
-    }
+        string url = REST_YANDEX_URI + "?path=/Приложения/Todoom/" + file_path + "&permanently=true";
+        try
+        {
+            auto responce = Http.sendRequest(url, DELETE, true);
+        }
+        catch (nlohmann::detail::type_error& err)
+        {
+            clog << "File " << file_path << " was deleted" << endl;
+        }
+        catch (nlohmann::detail::parse_error& err)
+        {
+            clog << "File " << file_path << " was deleted" << endl;
+        }
+}
+
+void YandexCloudControl::getToken()
+{
+    system("xdg-open \"https://oauth.yandex.ru/authorize?response_type=code&client_id=cb5b4cad0f46478c9dd05becdfd6ba6b\" &");
     code = Http.waitCode();
     string session_url;
     std::string reqBody;
-    if(cloud == YANDEX)
-    {
-        session_url = "https://oauth.yandex.ru/token";
-        reqBody = "grant_type=authorization_code&code=";
-        reqBody += code + "&client_id=cb5b4cad0f46478c9dd05becdfd6ba6b&"
+    session_url = "https://oauth.yandex.ru/token";
+    reqBody = "grant_type=authorization_code&code=";
+    reqBody += code + "&client_id=cb5b4cad0f46478c9dd05becdfd6ba6b&"
                           "client_secret=68ce6e11b7ba4083895a9ba369732f54";
-    }
-    else if(cloud == GOOGLE)
-    {
-        session_url = "https://www.googleapis.com/oauth2/v4/token";
-        reqBody = "code=";
-        reqBody += code + "&redirect_uri=http://localhost:8080/todoom_test/&"
-                          "client_id=667025493984-td9odtft7j4srplq2q421q39c7ojg4uo.apps.googleusercontent.com&"
-                          "client_secret=kVuD5R0hloUSDDc4kdzbx96n&scope=&"
-                          "grant_type=authorization_code";
-
-    }
     auto response_json = Http.sendRequest(session_url, POST, false, reqBody);
     token = response_json["access_token"];
     Http.setToken(token);
 }
 
-void CloudControl::watchFolder(const string& folder)
+void YandexCloudControl::watchFolder(const string& folder)
 {
-    auto func = [this](const string& folder){
+    auto watch_fn = [this](const string& folder, uint32_t __mask){
         auto inotify_fd = inotify_init();
-        auto wd = inotify_add_watch(inotify_fd, folder.c_str(), IN_MODIFY);
+        auto wd = inotify_add_watch(inotify_fd, folder.c_str(), __mask);
         char readed_file[4096]
                 __attribute__ ((aligned(__alignof__(struct inotify_event))));
         const struct inotify_event *event;
@@ -199,20 +172,39 @@ void CloudControl::watchFolder(const string& folder)
                 string changed_file = (folder.size() == HOME_FOLDER.size()) ? static_cast<string>(event->name) :
                                       folder.substr(HOME_FOLDER.size(), folder.size()-HOME_FOLDER.size())
                                       + "/" + static_cast<string>(event->name);
-                this->uploadFile(changed_file);
+                switch(__mask)
+                {
+                    case IN_MODIFY :
+                    {
+                        clog << "File " << changed_file << " was uploaded" << endl;
+                        this->uploadFile(changed_file);
+                        break;
+                    }
+                    case IN_DELETE :
+                    {
+                        this->deleteFile(changed_file);
+                        break;
+                    }
+                    default: {}
+                }
             }
         }
         inotify_rm_watch( inotify_fd, wd );
         close(inotify_fd);
     };
-    watch_thread_vec.push_back(thread(func, folder));
-    for(auto& p: boost::filesystem::recursive_directory_iterator(folder))
+    watch_thread_vec.emplace_back(thread(watch_fn, folder, IN_MODIFY));
+    watch_thread_vec.emplace_back(thread(watch_fn, folder, IN_DELETE));
+    for(auto& p: filesystem::recursive_directory_iterator(folder))
     {
-        if(boost::filesystem::is_directory(p)) watch_thread_vec.push_back(thread(func, p.path().string()));
+        if(filesystem::is_directory(p))
+        {
+            watch_thread_vec.emplace_back(thread(watch_fn, p.path().string(), IN_MODIFY));
+            watch_thread_vec.emplace_back(thread(watch_fn, p.path().string(), IN_DELETE));
+        }
     }
 }
 
-void CloudControl::syncWithCloud(const string &uri_path)
+void YandexCloudControl::syncWithCloud(const string &uri_path)
 {
     auto list = this->listDirectory(uri_path)["_embedded"]["items"];
     for(auto& elem : list)
@@ -220,20 +212,33 @@ void CloudControl::syncWithCloud(const string &uri_path)
         string elem_path;
         if(elem["type"] == "dir")
         {
-            if(uri_path.size() != 0) elem_path = uri_path + "/" +  elem["name"].get<string>();
+            if(!uri_path.empty()) elem_path = uri_path + "/" +  elem["name"].get<string>();
             else elem_path = uri_path +  elem["name"].get<string>();
-            cout << elem_path << endl;
             this->syncWithCloud(elem_path);
-            boost::filesystem::path path(this->HOME_FOLDER +  elem_path);
-            if(!is_directory(path)) boost::filesystem::create_directory(path);
+            filesystem::path path(this->HOME_FOLDER +  elem_path);
+            if(!filesystem::is_directory(path)) {
+                filesystem::create_directory(path);
+                clog << "Directory " << path.string() << " was created" << endl;
+            }
         }
         else if(elem["type"] == "file")
         {
-            cout << "Name: " + elem["name"].get<string>() << endl;
-            if(uri_path.size() != 0) elem_path = uri_path + "/" +  elem["name"].get<string>();
+            if(!uri_path.empty()) elem_path = uri_path + "/" +  elem["name"].get<string>();
             else elem_path = uri_path +  elem["name"].get<string>();
-            cout << elem_path << endl;
-            this->downloadFile(elem_path);
+            filesystem::path path(this->HOME_FOLDER +  elem_path);
+            if(!filesystem::exists(path)) this->downloadFile(elem_path);
+            else
+            {
+                ifstream ifs(path.string(), std::ios::binary);
+                vector<unsigned char> hash(32);
+                picosha2::hash256(std::istreambuf_iterator<char>(ifs), std::istreambuf_iterator<char>(), hash.begin(), hash.end());
+                string hex_str = picosha2::bytes_to_hex_string(hash.begin(), hash.end());
+                if(elem["sha256"] != hex_str)
+                {
+                    this->downloadFile(elem_path);
+                    clog << "File " << path.string() << " was downloaded" << endl;
+                }
+            }
         }
     }
 }
