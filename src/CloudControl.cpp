@@ -91,7 +91,7 @@ void YandexCloudControl::downloadFile(const string &file_path)
                 fstream unzip_f(name, fstream::out);
                 char readed_file[100];
                 string file_str = "";
-                int len = 0, size = 0;
+                zip_uint64_t len = 0, size = 0;
                 auto file_inzip = zip_fopen_index(zip_handler, i, 0);
                 while(size != file_stat->size)
                 {
@@ -178,10 +178,19 @@ void YandexCloudControl::watchFolder(const string& folder)
                     {
                         clog << "File " << changed_file << " was uploaded" << endl;
                         this->uploadFile(changed_file);
+                        if(changed_file.substr(changed_file.size()-3, 3) == ".md")
+                        {
+                            string converted_md = folder + "/.converted/";
+                            string file_name(static_cast<string>(event->name));
+                            if (!filesystem::exists(converted_md)) { filesystem::create_directory(converted_md); };
+                            string convert_md = "./markdown/markdown_py " + HOME_FOLDER + changed_file + " > " + converted_md + file_name.substr(0, file_name.size()-3) + ".html";
+                            system(convert_md.c_str());
+                        }
                         break;
                     }
                     case IN_DELETE :
                     {
+                        //TODO delete html
                         this->deleteFile(changed_file);
                         break;
                     }
@@ -196,7 +205,7 @@ void YandexCloudControl::watchFolder(const string& folder)
     watch_thread_vec.emplace_back(thread(watch_fn, folder, IN_DELETE));
     for(auto& p: filesystem::recursive_directory_iterator(folder))
     {
-        if(filesystem::is_directory(p))
+        if(filesystem::is_directory(p) && p.path().filename().string()[0] != '.')
         {
             watch_thread_vec.emplace_back(thread(watch_fn, p.path().string(), IN_MODIFY));
             watch_thread_vec.emplace_back(thread(watch_fn, p.path().string(), IN_DELETE));

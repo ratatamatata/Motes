@@ -11,6 +11,7 @@
 #include <iostream>
 #include <memory>
 #include <fstream>
+#include <list>
 #include "Database.h"
 #include "CloudControl.h"
 

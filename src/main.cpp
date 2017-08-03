@@ -25,7 +25,7 @@ int main(int argc, char *argv[])
 
     string app_dir = "/home/sabbat/.local/share/Todoom/";
     stringbuf buffer;
-    ostream os(cout.rdbuf());
+//    ostream os(cout.rdbuf());
     yandexDisk.syncWithCloud();
     yandexDisk.watchFolder(app_dir);
     int temp;
