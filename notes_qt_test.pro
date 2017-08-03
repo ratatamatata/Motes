@@ -8,7 +8,7 @@ QT       += core gui webenginewidgets
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
-TARGET = notes_qt_test
+TARGET = Motes
 TEMPLATE = app
 # The following define makes your compiler emit warnings if you use
 # any feature of Qt which as been marked as deprecated (the exact warnings
@@ -24,10 +24,13 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 SOURCES += \
         main.cpp \
-        mainwindow.cpp
+        mainwindow.cpp \
+    settingswidget.cpp
 
 HEADERS += \
-        mainwindow.h
+        mainwindow.h \
+    settingswidget.h
 
 FORMS += \
-        mainwindow.ui
+        mainwindow.ui \
+    settings_form.ui
