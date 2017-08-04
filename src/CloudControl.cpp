@@ -29,10 +29,6 @@ YandexCloudControl::YandexCloudControl(const string& HOME_FOLDER)
 
 YandexCloudControl::~YandexCloudControl()
 {
-    for(auto i = watch_thread_vec.begin(); i < watch_thread_vec.end(); i++)
-    {
-        i->join();
-    }
 }
 
 json YandexCloudControl::listDirectory(const string &uri_path)
@@ -140,7 +136,7 @@ void YandexCloudControl::deleteFile(const string &file_path)
 
 void YandexCloudControl::getToken()
 {
-    system("xdg-open \"https://oauth.yandex.ru/authorize?response_type=code&client_id=cb5b4cad0f46478c9dd05becdfd6ba6b\" &");
+//    system("xdg-open \"https://oauth.yandex.ru/authorize?response_type=code&client_id=cb5b4cad0f46478c9dd05becdfd6ba6b\" &");
     code = Http.waitCode();
     string session_url;
     std::string reqBody;
@@ -183,16 +179,23 @@ void YandexCloudControl::watchFolder(const string& folder)
                             string converted_md = folder + "/.converted/";
                             string file_name(static_cast<string>(event->name));
                             if (!filesystem::exists(converted_md)) { filesystem::create_directory(converted_md); };
-                            string convert_md = "./markdown/markdown_py " + HOME_FOLDER + changed_file + " > " + converted_md + file_name.substr(0, file_name.size()-3) + ".html";
+                            string convert_md = "./markdown/markdown_py -x markdown.extensions.footnotes -x markdown.extensions.tables " +
+                                                HOME_FOLDER + changed_file + " > " +
+                                                converted_md + file_name.substr(0, file_name.size()-3) + ".html";
                             system(convert_md.c_str());
+                            string add_css = "./markdown/add_css.py ./markdown/css.css " +
+                                                converted_md + file_name.substr(0, file_name.size()-3) + ".html";
+                            system(add_css.c_str());
                         }
                         break;
                     }
                     case IN_DELETE :
                     {
                         //TODO delete html
+                        inotify_rm_watch( inotify_fd, wd );
+                        close(inotify_fd);
                         this->deleteFile(changed_file);
-                        break;
+                        return;
                     }
                     default: {}
                 }
@@ -201,14 +204,14 @@ void YandexCloudControl::watchFolder(const string& folder)
         inotify_rm_watch( inotify_fd, wd );
         close(inotify_fd);
     };
-    watch_thread_vec.emplace_back(thread(watch_fn, folder, IN_MODIFY));
-    watch_thread_vec.emplace_back(thread(watch_fn, folder, IN_DELETE));
+    thread(watch_fn, folder, IN_MODIFY).detach();
+    thread(watch_fn, folder, IN_DELETE).detach();
     for(auto& p: filesystem::recursive_directory_iterator(folder))
     {
         if(filesystem::is_directory(p) && p.path().filename().string()[0] != '.')
         {
-            watch_thread_vec.emplace_back(thread(watch_fn, p.path().string(), IN_MODIFY));
-            watch_thread_vec.emplace_back(thread(watch_fn, p.path().string(), IN_DELETE));
+            thread(watch_fn, p.path().string(), IN_MODIFY).detach();
+            thread(watch_fn, p.path().string(), IN_DELETE).detach();
         }
     }
 }
