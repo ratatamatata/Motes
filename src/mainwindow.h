@@ -4,7 +4,9 @@
 #include <QMainWindow>
 #include <QFileSystemModel>
 #include <QSettings>
+#include <thread>
 #include "settingswidget.h"
+#include "CloudControl.h"
 
 namespace Ui {
 class MainWindow;
@@ -30,8 +32,11 @@ private:
     Ui::MainWindow *ui;
     QFileSystemModel *model;
     MotesSettings* settings;
+    YandexCloudControl* yandexDisk;
     QString* home_folder;
     QString* editor_path;
+    std::thread* getTokenThr;
+
 };
 
 #endif // MAINWINDOW_H

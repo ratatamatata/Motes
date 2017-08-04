@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include <QWebEngineView>
+#include <QWebEngineSettings>
 #include <QModelIndex>
 #include <QFileDialog>
 #include <QSettings>
@@ -15,9 +16,13 @@ MainWindow::MainWindow(QWidget *parent) :
     settings = new MotesSettings("SmallFlyes", "Motes");
     home_folder = settings->getHome_folder();
     editor_path = settings->getEditor_path();
-
+    //Configure webView
     ui->webView->setUrl((QUrl("file:" + *home_folder + "/.converted/markdown.html")));
-    qDebug() << *home_folder;
+    auto webEngineSettings = ui->webView->settings();
+    webEngineSettings->setAttribute(QWebEngineSettings::JavascriptEnabled, false);
+    webEngineSettings->setAttribute(QWebEngineSettings::WebGLEnabled, false);
+    webEngineSettings->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, false);
+    //Configure treeView
     QStringList filters;
     filters.append("*.md");
     model->setNameFilters(filters);
@@ -28,13 +33,26 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->treeView->hideColumn(2);
     ui->treeView->setRootIndex(model->index(*home_folder));
     ui->treeView->setContextMenuPolicy(Qt::CustomContextMenu);
+    ui->treeView->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
     connect(ui->actionNew_File, &QAction::triggered, this, &MainWindow::newFile);
     connect(ui->actionSettings, &QAction::triggered, this, &MainWindow::settingsWidget);
+    // Connect to cloud
+    yandexDisk = new YandexCloudControl(home_folder->toStdString());
+    ui->webView->setUrl(QUrl("https://oauth.yandex.ru/authorize?response_type=code&client_id=cb5b4cad0f46478c9dd05becdfd6ba6b"));
+    getTokenThr = new std::thread(&YandexCloudControl::getToken, yandexDisk);
+    getTokenThr->detach();
+    yandexDisk->syncWithCloud();
+    yandexDisk->watchFolder(home_folder->toStdString());
 }
 
 MainWindow::~MainWindow()
 {
     delete ui;
+    delete model;
+    delete settings;
+    delete yandexDisk;
+    delete getTokenThr;
+
 }
 
 void MainWindow::on_treeView_doubleClicked(const QModelIndex &index)
@@ -45,8 +63,6 @@ void MainWindow::on_treeView_doubleClicked(const QModelIndex &index)
         auto file_path = model->filePath(index);
         QString path_to_html_add = "/.converted/" + file_name.replace(file_name.size()-3, 3, ".html");
         file_path.replace(file_path.size()-file_name.size()+1, file_name.size(), path_to_html_add);
-        qDebug() << file_path;
-        qDebug() << *editor_path;
         ui->webView->setUrl((QUrl("file:" + file_path)));
     }
 }
@@ -76,11 +92,17 @@ void MainWindow::editTreeElement()
 void MainWindow::deleteTreeElement()
 {
     auto currentIndex = this->ui->treeView->currentIndex();
+    auto file_path = model->filePath(currentIndex);
     if(!model->isDir(currentIndex))
     {
-        auto file_path = model->filePath(currentIndex);
         QFile file(file_path);
         file.remove();
+    }
+    else
+    {
+        QDir dir(file_path);
+        bool result = dir.removeRecursively();
+        qDebug() << "The directory remove operation " << (result ? "finished successfully" : "failed");
     }
 }
 

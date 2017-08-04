@@ -23,14 +23,16 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 
 SOURCES += \
-        main.cpp \
-        mainwindow.cpp \
-    settingswidget.cpp
+        ./src/main.cpp \
+        ./src/mainwindow.cpp \
+        ./src/settingswidget.cpp
 
 HEADERS += \
-        mainwindow.h \
-    settingswidget.h
+        ./src/mainwindow.h \
+        ./src/settingswidget.h
 
 FORMS += \
-        mainwindow.ui \
-    settings_form.ui
+        ./src/ui/mainwindow.ui \
+        ./src/ui/settings_form.ui
+
+SUBDIRS = ./libraries/todoom
