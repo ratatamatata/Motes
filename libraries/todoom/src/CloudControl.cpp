@@ -179,7 +179,7 @@ void YandexCloudControl::watchFolder(const string& folder)
                             string converted_md = folder + "/.converted/";
                             string file_name(static_cast<string>(event->name));
                             if (!filesystem::exists(converted_md)) { filesystem::create_directory(converted_md); };
-                            string convert_md = "./markdown/markdown_py -x markdown.extensions.footnotes -x markdown.extensions.tables " +
+                            string convert_md = "./markdown/markdown_py -x markdown.extensions.extra " +
                                                 HOME_FOLDER + changed_file + " > " +
                                                 converted_md + file_name.substr(0, file_name.size()-3) + ".html";
                             system(convert_md.c_str());

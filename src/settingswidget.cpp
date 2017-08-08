@@ -59,7 +59,7 @@ void SettingsWidget::on_workfolderButton_released()
 MotesSettings::MotesSettings(const QString &organization, const QString &application, QSettings *parent): QSettings(organization, application)
 {
     if(!this->value("default_editor").isValid()) this->setValue("default_editor", "/usr/bin/subl3");
-    if(!this->value("work_folder").isValid()) this->setValue("work_folder", "/home/sabbat/.local/share/Todoom/");
+    if(!this->value("work_folder").isValid()) this->setValue("work_folder", QDir::homePath() + "/.local/share/Todoom/");
     qDebug() << this->fileName();
     home_folder = this->value("work_folder").toString();
     editor_path = this->value("default_editor").toString();

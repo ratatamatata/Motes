@@ -5,6 +5,7 @@
 #include <QModelIndex>
 #include <QFileDialog>
 #include <QSettings>
+#include <QMessageBox>
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -39,10 +40,13 @@ MainWindow::MainWindow(QWidget *parent) :
     // Connect to cloud
     yandexDisk = new YandexCloudControl(home_folder->toStdString());
     ui->webView->setUrl(QUrl("https://oauth.yandex.ru/authorize?response_type=code&client_id=cb5b4cad0f46478c9dd05becdfd6ba6b"));
-    getTokenThr = new std::thread(&YandexCloudControl::getToken, yandexDisk);
-    getTokenThr->detach();
-    yandexDisk->syncWithCloud();
-    yandexDisk->watchFolder(home_folder->toStdString());
+    auto cloudFunc = [this](std::string home_folder)
+    {
+        yandexDisk->getToken();
+        yandexDisk->syncWithCloud();
+        yandexDisk->watchFolder(home_folder);
+    };
+    getTokenThr = new std::thread(cloudFunc, home_folder->toStdString());
 }
 
 MainWindow::~MainWindow()
@@ -51,6 +55,7 @@ MainWindow::~MainWindow()
     delete model;
     delete settings;
     delete yandexDisk;
+    getTokenThr->join();
     delete getTokenThr;
 
 }
@@ -91,18 +96,22 @@ void MainWindow::editTreeElement()
 
 void MainWindow::deleteTreeElement()
 {
-    auto currentIndex = this->ui->treeView->currentIndex();
-    auto file_path = model->filePath(currentIndex);
-    if(!model->isDir(currentIndex))
+    if (QMessageBox::Yes == QMessageBox::question(this, "Delete this file?", "Are you sure?",
+                          QMessageBox::Yes|QMessageBox::No))
     {
-        QFile file(file_path);
-        file.remove();
-    }
-    else
-    {
-        QDir dir(file_path);
-        bool result = dir.removeRecursively();
-        qDebug() << "The directory remove operation " << (result ? "finished successfully" : "failed");
+        auto currentIndex = this->ui->treeView->currentIndex();
+        auto file_path = model->filePath(currentIndex);
+        if(!model->isDir(currentIndex))
+        {
+            QFile file(file_path);
+            file.remove();
+        }
+        else
+        {
+            QDir dir(file_path);
+            bool result = dir.removeRecursively();
+            qDebug() << "The directory remove operation " << (result ? "finished successfully" : "failed");
+        }
     }
 }
 
@@ -111,12 +120,15 @@ void MainWindow::newFile()
     QFileDialog newFile;
     auto fileName = QFileDialog::getSaveFileName(nullptr,
         tr("New File"), *home_folder, tr("Markdown Files (*.md)"));
-    if(!fileName.endsWith(".md")) fileName += ".md";
-    QFile file(fileName);
-    file.open(QIODevice::WriteOnly);
-    file.close();
-    auto exec = editor_path->toStdString() + " " + fileName.toStdString();
-    system(exec.c_str());
+    if(!fileName.isEmpty())
+    {
+        if(!fileName.endsWith(".md")) fileName += ".md";
+        QFile file(fileName);
+        file.open(QIODevice::WriteOnly);
+        file.close();
+        auto exec = editor_path->toStdString() + " " + fileName.toStdString();
+        system(exec.c_str());
+    }
 }
 
 void MainWindow::settingsWidget()
